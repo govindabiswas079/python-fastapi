@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
+from app.core.auth import get_current_user
 from app.models.todo_model import TodoModel
 from app.service.todo_service import TodoService
 
-router = APIRouter()
+router = APIRouter(prefix="/todo", tags=["Todo"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/todo", status_code=status.HTTP_201_CREATED)

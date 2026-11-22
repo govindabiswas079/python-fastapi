@@ -12,6 +12,9 @@ MongoDBClient = AsyncMongoClient(
 MongoDataBase = MongoDBClient[settings.DATABASE_NAME]
 
 todoCollection = MongoDataBase["todo_data"]
+userCollection = MongoDataBase["user_data"]
+sessionCollection = MongoDataBase["auth_sessions"]
+pendingRegistrationCollection = MongoDataBase["pending_registrations"]
 
 async def connect_database(): 
     await MongoDBClient.admin.command('ping')

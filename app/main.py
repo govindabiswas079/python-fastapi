@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import close_database, connect_database
+from app.router.auth_router import router as auth_router
 from app.router.todo_router import router as todo_router
+from app.router.user_router import router as user_router
 
 load_dotenv()
 
@@ -36,9 +38,18 @@ app.add_middleware(
 )
 
 app.include_router(
+    auth_router,
+    prefix=settings.API_PREFIX
+)
+app.include_router(
+    user_router,
+    prefix=settings.API_PREFIX
+)
+app.include_router(
     todo_router,
     prefix=settings.API_PREFIX
 )
+
 
 @app.get("/")
 async def root():

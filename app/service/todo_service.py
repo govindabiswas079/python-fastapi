@@ -1,10 +1,10 @@
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import HTTPException, Query, status
 from pymongo import ReturnDocument
 
 from app.core.database import todoCollection
 from app.models.todo_model import TodoModel
-from app.schemas.todoschema import all_todo, individual_data
+from app.schemas.todo_schema import all_todo, individual_data
 
 
 class TodoService:

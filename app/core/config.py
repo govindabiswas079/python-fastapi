@@ -32,6 +32,14 @@ class Config:
     DATABASE_NAME = os.getenv("DATABASE_NAME", "myapp")
     API_PREFIX = os.getenv('API_PREFIX', '/api/v1')
     CORS_ORIGINS: list[str] = []  # noqa: RUF012
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or (
+        "development-only-change-this-secret" if ENVIRONMENT != "production" else ""
+    )
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 
 settings = Config()
+
+if not settings.JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY must be set when ENVIRONMENT=production")

@@ -1,4 +1,4 @@
-def individual_data(todo):
+def individual_data(todo: dict):
     return {
         "_id": str(todo["_id"]),
         "title": todo["title"],
