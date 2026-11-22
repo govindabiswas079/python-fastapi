@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import close_database, connect_database
-from app.router import todo_router
+from app.router.todo_router import router as todo_router
 
 load_dotenv()
 
