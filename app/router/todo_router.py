@@ -1,10 +1,37 @@
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, status
+from pymongo import ReturnDocument
 
 from app.core.database import todoCollection
 from app.models.todo_model import TodoModel
-from app.schemas.todoschema import all_todo
+from app.schemas.todoschema import all_todo, individual_data
 
 router = APIRouter()
+
+
+@router.post("/todo", status_code=status.HTTP_201_CREATED)
+async def create_todo(new_todo: TodoModel):
+
+    try:
+        todo_data = dict(new_todo)
+
+        result = await todoCollection.insert_one(todo_data)
+        fetched_created = await todoCollection.find_one({"_id": result.inserted_id})
+
+        fetched_created["_id"] = str(fetched_created["_id"])
+
+        return {
+            "status_code": status.HTTP_201_CREATED,
+            "message": "Todo created successfully",
+            "todo_id": str(result.inserted_id),
+            "data": fetched_created,
+        }
+
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create todo: {e!s}",
+        )
 
 
 @router.get("/todos", status_code=status.HTTP_200_OK)
@@ -39,33 +66,195 @@ async def get_all_todos(
             "to": to_item,
         }
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch todos: {str(e)}",
+            detail=f"Failed to fetch todos: {e!s}",
         )
 
 
-@router.post("/todo", status_code=status.HTTP_201_CREATED)
-async def create_todo(new_todo: TodoModel):
-
+@router.get("/todo/{_id}", status_code=status.HTTP_200_OK)
+async def get_todo(_id: str):
     try:
-        todo_data = new_todo.model_dump()
+        # Validate MongoDB ObjectId format
+        if not ObjectId.is_valid(_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Todo ID format"
+            )
 
-        result = await todoCollection.insert_one(todo_data)
-        fetched_created = await todoCollection.find_one({"_id": result.inserted_id})
+        # Query MongoDB
+        todo = await todoCollection.find_one({"_id": ObjectId(_id)})
 
-        fetched_created["_id"] = str(fetched_created["_id"])
+        # Check if document exists
+        if not todo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found"
+            )
 
         return {
-            "status_code": status.HTTP_201_CREATED,
-            "message": "Todo created successfully",
-            "todo_id": str(result.inserted_id),
-            "data": fetched_created
+            "success": True,
+            "message": "Todo fetched successfully",
+            "data": individual_data(todo),
         }
 
-    except Exception as e:
+    except HTTPException:
+        raise
+
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create todo: {str(e)}",
+            detail=f"Failed to fetch todo: {e!s}",
+        )
+
+
+@router.put("/todo/{_id}", status_code=200)
+async def update_todo(_id: str, updated_todo: TodoModel):
+
+    try:
+        todo_data = dict(updated_todo)
+
+        # Validate MongoDB ObjectId format
+        if not ObjectId.is_valid(_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Todo ID format"
+            )
+
+        ifExit = await todoCollection.find_one({"_id": ObjectId(_id)})
+
+        # Check if document exists
+        if not ifExit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Todo not exit",
+            )
+
+        await todoCollection.update_one({"_id": ObjectId(_id)}, {"$set": todo_data})
+        fetch_updated_todo = await todoCollection.find_one({"_id": ObjectId(_id)})
+
+        return {
+            "success": True,
+            "message": "Todo updated successfully",
+            "data": individual_data(fetch_updated_todo),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update todo: {e!s}",
+        )
+
+
+@router.patch("/todo/completed/{_id}", status_code=200)
+async def complete_and_in_complete_todo(_id: str):
+    try:
+        # Validate MongoDB ObjectId format
+        if not ObjectId.is_valid(_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Todo ID format"
+            )
+
+        # fetch exiting todo
+        ifExit = await todoCollection.find_one({"_id": ObjectId(_id)})
+
+        # Check if document exists
+        if not ifExit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Todo not exit",
+            )
+
+        updated_todo_response = await todoCollection.find_one_and_update(
+            {"_id": ObjectId(_id)},
+            {"$set": {"is_completed": not ifExit.get("is_completed", False)}},
+            return_document=ReturnDocument.AFTER,
+        )
+
+        return {
+            "success": True,
+            "message": "Todo updated successfully",
+            "data": individual_data(updated_todo_response),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update todo: {e!s}",
+        )
+
+
+@router.patch("/todo/disable/{_id}", status_code=status.HTTP_200_OK)
+async def disable_and_enable_todo(_id: str):
+    try:
+        # Validate MongoDB ObjectId format
+        if not ObjectId.is_valid(_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Todo ID format"
+            )
+
+        # fetch exiting todo
+        ifExit = await todoCollection.find_one({"_id": ObjectId(_id)})
+
+        # Check if document exists
+        if not ifExit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Todo not exit",
+            )
+
+        updated_todo_response = await todoCollection.find_one_and_update(
+            {"_id": ObjectId(_id)},
+            {"$set": {"is_deleted": not ifExit.get("is_deleted", False)}},
+            return_document=ReturnDocument.AFTER,
+        )
+
+        print(f"updated_todo_response: {updated_todo_response}")
+
+        return {
+            "success": True,
+            "message": "Todo updated successfully",
+            "data": individual_data(updated_todo_response),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update todo: {e!s}",
+        )
+
+
+@router.delete("/todo/{_id}", status_code=status.HTTP_200_OK)
+async def delete_todo(_id: str):
+    try:
+        if not ObjectId.is_valid(_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Todo ID format"
+            )
+
+        ifExit = await todoCollection.find_one({"_id": ObjectId(_id)})
+
+        if not ifExit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Todo not exit",
+            )
+
+        await todoCollection.delete_one({"_id": ObjectId(_id)})
+
+        return {
+            "success": True,
+            "message": "Todo deleted successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete todo: {e!s}",
         )
