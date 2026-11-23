@@ -15,16 +15,48 @@ class TodoService:
             todo_data["_creator"] = ObjectId(creator_id)
 
             result = await todoCollection.insert_one(todo_data)
-            fetched_created = await todoCollection.find_one({"_id": result.inserted_id})
-            fetched_created["_creator"] = await userCollection.find_one(
-                {"_id": ObjectId(creator_id)}
-            )
+
+            # Query MongoDB
+            cursor = await todoCollection.aggregate([
+                {"$match":{"_id": result.inserted_id}},
+                # Lookup _creator
+                {
+                    "$lookup": {
+                        "from": 'user_data',
+                        "localField": '_creator',
+                        "foreignField": '_id',
+                        "pipeline": [
+                            {
+                                "$project": {
+                                    "password": 0
+                                }
+                            }
+                        ],
+                        "as": '_creator'
+                    },
+                },
+                {
+                    "$unwind": {
+                        "path": "$_creator",
+                        "preserveNullAndEmptyArrays": True
+                    },
+                },
+                {
+                    "$set": {
+                        "_creator": {
+                            "$ifNull": ["$_creator", None]
+                        }
+                    }
+                },
+            ])
+
+            data = await cursor.to_list(length=None)
+            todo = data[0]
 
             return {
                 "status_code": status.HTTP_201_CREATED,
                 "message": "Todo created successfully",
-                "todo_id": str(result.inserted_id),
-                "data": individual_data(fetched_created),
+                "data": individual_data(todo),
             }
 
         except Exception as e:  # noqa: BLE001
@@ -176,7 +208,6 @@ class TodoService:
             data = await cursor.to_list(length=None)
             todo = data[0]
 
-            print(f"data: {data}")
             # Check if document exists
             if not todo:
                 raise HTTPException(
