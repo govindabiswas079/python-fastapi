@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 
 class TodoModel(BaseModel):
+    _creator: str
     title: str
     description: str
     is_completed: bool = False

@@ -8,8 +8,11 @@ router = APIRouter(prefix="/todo", tags=["Todo"], dependencies=[Depends(get_curr
 
 
 @router.post("/todo", status_code=status.HTTP_201_CREATED)
-async def create_todo(new_todo: TodoModel):
-    return await TodoService.create_todo(new_todo)
+async def create_todo(
+    new_todo: TodoModel,
+    current_user=Depends(get_current_user),
+):
+    return await TodoService.create_todo(new_todo, str(current_user["_id"]))
 
 
 @router.get("/todos", status_code=status.HTTP_200_OK)

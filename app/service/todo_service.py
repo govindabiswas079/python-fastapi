@@ -9,14 +9,16 @@ from app.schemas.todo_schema import all_todo, individual_data
 
 class TodoService:
     @staticmethod
-    async def create_todo(new_todo: TodoModel):
+    async def create_todo(new_todo: TodoModel, creator_id: str):
         try:
             todo_data = dict(new_todo)
+            todo_data["_creator"] = ObjectId(creator_id)
 
             result = await todoCollection.insert_one(todo_data)
             fetched_created = await todoCollection.find_one({"_id": result.inserted_id})
 
             fetched_created["_id"] = str(fetched_created["_id"])
+            fetched_created["_creator"] = str(fetched_created["_creator"])
 
             return {
                 "status_code": status.HTTP_201_CREATED,
@@ -34,30 +36,91 @@ class TodoService:
     @staticmethod
     async def get_all_todos(currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
         try:
-            number_of_data = await todoCollection.count_documents({})
-            total_pages = (number_of_data + pageSize - 1) // pageSize
-            offset = (currentPage - 1) * pageSize
+            startIndex = (currentPage - 1) * pageSize
 
-            print(f"number_of_data: {number_of_data}")
-            print(f"total_pages: {total_pages}")
-            print(f"offset: {offset}")
+            cursor = await todoCollection.aggregate([
+                # Lookup _creator
+                {
+                    "$lookup": {
+                        "from": 'user_data',
+                        "localField": '_creator',
+                        "foreignField": '_id',
+                        "pipeline": [
+                            {
+                                "$project": {
+                                    "password": 0
+                                }
+                            }
+                        ],
+                        "as": '_creator'
+                    },
+                },
+                {
+                    "$unwind": {
+                        "path": "$_creator",
+                        "preserveNullAndEmptyArrays": True
+                    },
+                },
+                {
+                    "$set": {
+                        "_creator": {
+                            "$ifNull": ["$_creator", None]
+                        }
+                    }
+                },
+                # Pagination
+                {
+                    "$facet": {
+                        "metadata": [
+                            {
+                                "$count": "numberOfData",
+                            },
+                            {
+                                "$addFields": {
+                                    "currentPage": int(currentPage),
+                                    "pageSize": pageSize,
+                                    "totalPages": {
+                                        "$toInt": {
+                                            "$ceil": {
+                                                "$divide": ["$numberOfData", pageSize],
+                                            },
+                                        }
+                                    },
+                                    "from": {
+                                        "$cond": [
+                                            { "$gt": ["$numberOfData", 0] },
+                                            { "$add": [startIndex, 1] },
+                                            0,
+                                        ],
+                                    },
+                                    "to": {
+                                        "$min": [
+                                            { "$add": [startIndex, pageSize] },
+                                            "$numberOfData",
+                                        ],
+                                    },
+                                },
+                            },
+                        ],
+                        "data": [
+                            {
+                                "$skip": startIndex,
+                            },
+                            {
+                                "$limit": pageSize,
+                            },
+                        ],
+                    },
+                },
+            ])
 
-            cursor = todoCollection.find({}).skip(offset).limit(pageSize)
-            data = await cursor.to_list(length=pageSize)
-
-            # For an empty result (including a page beyond the last page), report
-            # zero-based bounds while preserving the requested page number.
-            from_item = offset + 1 if data else 0
-            to_item = offset + len(data) if data else 0
+            todos = await cursor.to_list(length=None)
+            metadata = todos[0]['metadata'][0]
+            data = todos[0]['data']
 
             return {
                 "todos": all_todo(data),
-                "numberOfData": number_of_data,
-                "currentPage": currentPage,
-                "pageSize": pageSize,
-                "totalPages": total_pages,
-                "from": from_item,
-                "to": to_item,
+                **metadata
             }
 
         except Exception as e:  # noqa: BLE001
