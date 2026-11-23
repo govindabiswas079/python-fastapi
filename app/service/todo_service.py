@@ -151,8 +151,12 @@ class TodoService:
             data = todos[0]['data']
 
             return {
-                "todos": all_todo(data),
-                **metadata
+                "status_code": status.HTTP_200_OK,
+                "message": "Todos fetched successfully",
+                "data": {
+                    "todos": all_todo(data),
+                    **metadata
+                }
             }
 
         except Exception as e:  # noqa: BLE001
