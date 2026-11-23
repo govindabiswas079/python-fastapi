@@ -37,9 +37,12 @@ class Config:
     )
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    REDIS_URL = os.getenv("REDIS_URL", "")
 
 
 settings = Config()
 
 if not settings.JWT_SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY must be set when ENVIRONMENT=production")
+if settings.ENVIRONMENT == "production" and not settings.REDIS_URL:
+    raise RuntimeError("REDIS_URL must be set when ENVIRONMENT=production")

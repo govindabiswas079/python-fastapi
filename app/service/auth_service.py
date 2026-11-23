@@ -1,21 +1,21 @@
-from datetime import datetime, timezone
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from fastapi import HTTPException, status
 from pwdlib import PasswordHash
 from pymongo.errors import DuplicateKeyError
 
-from app.core.database import (
-    pendingRegistrationCollection,
-    sessionCollection,
-    userCollection,
+from app.core.database import userCollection
+from app.core.ephemeral_store import (
+    ephemeral_store,
+    otp_lifetime_seconds,
+    refresh_lifetime_seconds,
 )
 from app.core.security import (
     access_token_lifetime,
     create_token,
     decode_token,
-    refresh_token_lifetime,
 )
 from app.models.user_model import UserModel
 from app.schemas.user_schema import individual_user
@@ -32,21 +32,18 @@ class AuthService:
         self.collection = collection
 
     async def _issue_tokens(self, user):
-        now = datetime.now(timezone.utc)
         session_id = secrets.token_urlsafe(32)
-        refresh_expires = now + refresh_token_lifetime()
-        await sessionCollection.insert_one({
-            "_id": session_id,
-            "user_id": user["_id"],
-            "created_at": int(now.timestamp()),
-            "expires_at": int(refresh_expires.timestamp()),
-        })
+        await ephemeral_store.set_session(
+            session_id, str(user["_id"]), refresh_lifetime_seconds()
+        )
         return {
             "access_token": create_token(
-                str(user["_id"]), "access", access_token_lifetime(), session_id
+                user, "access", access_token_lifetime(), session_id
             ),
             "refresh_token": create_token(
-                str(user["_id"]), "refresh", refresh_token_lifetime(), session_id
+                user, "refresh",
+                timedelta(seconds=refresh_lifetime_seconds()),
+                session_id,
             ),
             "token_type": "bearer",
             "expires_in": int(access_token_lifetime().total_seconds()),
@@ -60,9 +57,9 @@ class AuthService:
                 "$or": [{"email": new_user.email}, {"phone": new_user.phone}]
             }
             existing_user = await self.collection.find_one(duplicate_query)
-            existing_pending = await pendingRegistrationCollection.find_one(duplicate_query)
-
-            if existing_user or existing_pending:
+            if existing_user or await ephemeral_store.has_pending(
+                new_user.email, new_user.phone
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email or phone number already registered",
@@ -78,12 +75,20 @@ class AuthService:
 
             # Keep unverified details outside the registered user collection.
             user_data["registerOTP"] = DUMMY_OTP
-            result = await pendingRegistrationCollection.insert_one(user_data)
+            if not await ephemeral_store.create_pending(
+                new_user.email,
+                new_user.phone,
+                user_data,
+                otp_lifetime_seconds(),
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email or phone number already has a pending registration",
+                )
 
             return {
                 "status_code": status.HTTP_201_CREATED,
                 "message": "OTP sent. Verify it to complete registration.",
-                "pending_registration_id": str(result.inserted_id),
                 "otp": DUMMY_OTP,  # Development only
             }
 
@@ -106,9 +111,7 @@ class AuthService:
 
     async def verify_register_otp(self, email: str, otp: str):
         try:
-            user = await pendingRegistrationCollection.find_one(
-                {"email": email}
-            )
+            user = await ephemeral_store.get_pending(email)
 
             if not user:
                 raise HTTPException(
@@ -126,13 +129,12 @@ class AuthService:
                 datetime.now(timezone.utc).timestamp()  # noqa: UP017
             )
 
-            user.pop("_id", None)
             user.pop("registerOTP", None)
             user["is_verified"] = True
             user["updatedAt"] = current_timestamp
             result = await self.collection.insert_one(user)
             updated_user = await self.collection.find_one({"_id": result.inserted_id})
-            await pendingRegistrationCollection.delete_one({"email": email})
+            await ephemeral_store.delete_pending(email, user["phone"])
 
             return {
                 "status_code": status.HTTP_200_OK,
@@ -208,23 +210,21 @@ class AuthService:
 
     async def refresh(self, refresh_token: str):
         payload = decode_token(refresh_token, "refresh")
-        session = await sessionCollection.find_one({"_id": payload["jti"]})
+        session_user_id = await ephemeral_store.get_session(payload["jti"])
         try:
             user_id = ObjectId(payload["sub"])
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token") from exc
-        if (
-            not session
-            or session["user_id"] != user_id
-            or session["expires_at"] <= int(datetime.now(timezone.utc).timestamp())
-        ):
+        if session_user_id != str(user_id):
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
         user = await self.collection.find_one({"_id": user_id, "is_verified": True})
         if not user:
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
         # Rotate the session so a refresh token can be used only once.
-        await sessionCollection.delete_one({"_id": payload["jti"]})
+        consumed_user_id = await ephemeral_store.consume_session(payload["jti"])
+        if consumed_user_id != str(user_id):
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
         return {
             "status_code": status.HTTP_200_OK,
             "message": "Token refreshed successfully",

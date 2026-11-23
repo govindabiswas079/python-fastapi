@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.database import sessionCollection, userCollection
+from app.core.database import userCollection
+from app.core.ephemeral_store import ephemeral_store
 from app.core.security import decode_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -31,7 +31,7 @@ async def get_current_user(
     if not user:
         raise unauthorized
 
-    session = await sessionCollection.find_one({"_id": payload["jti"], "user_id": user_id})
-    if not session or session["expires_at"] <= int(datetime.now(timezone.utc).timestamp()):
+    session_user_id = await ephemeral_store.get_session(payload["jti"])
+    if session_user_id != str(user_id):
         raise unauthorized
     return user
