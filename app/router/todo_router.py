@@ -25,19 +25,19 @@ async def get_todo(_id: str):
 
 
 @router.put("/todo/{_id}", status_code=200)
-async def update_todo(_id: str, updated_todo: TodoModel):
-    return await TodoService.update_todo(_id, updated_todo)
+async def update_todo(_id: str, updated_todo: TodoModel, current_user=Depends(get_current_user)):
+    return await TodoService.update_todo(_id, updated_todo, str(current_user['_id']))
 
 
 @router.patch("/todo/completed/{_id}", status_code=200)
-async def complete_and_in_complete_todo(_id: str):
-    return await TodoService.complete_and_in_complete_todo(_id)
+async def complete_and_in_complete_todo(_id: str, current_user=Depends(get_current_user)):
+    return await TodoService.complete_and_in_complete_todo(_id, str(current_user['_id']))
 
 
 @router.patch("/todo/disable/{_id}", status_code=status.HTTP_200_OK)
-async def disable_and_enable_todo(_id: str):
-    return await TodoService.disable_and_enable_todo(_id)
+async def disable_and_enable_todo(_id: str, current_user=Depends(get_current_user)):
+    return await TodoService.disable_and_enable_todo(_id, str(current_user['_id']))
 
 @router.delete("/todo/{_id}", status_code=status.HTTP_200_OK)
-async def delete_todo(_id: str):
-    return await TodoService.delete_todo(_id)
+async def delete_todo(_id: str, current_user=Depends(get_current_user)):
+    return await TodoService.delete_todo(_id, str(current_user['_id']))

@@ -2,7 +2,7 @@ from bson import ObjectId
 from fastapi import HTTPException, Query, status
 from pymongo import ReturnDocument
 
-from app.core.database import todoCollection
+from app.core.database import todoCollection, userCollection
 from app.models.todo_model import TodoModel
 from app.schemas.todo_schema import all_todo, individual_data
 
@@ -16,15 +16,15 @@ class TodoService:
 
             result = await todoCollection.insert_one(todo_data)
             fetched_created = await todoCollection.find_one({"_id": result.inserted_id})
-
-            fetched_created["_id"] = str(fetched_created["_id"])
-            fetched_created["_creator"] = str(fetched_created["_creator"])
+            fetched_created["_creator"] = await userCollection.find_one(
+                {"_id": ObjectId(creator_id)}
+            )
 
             return {
                 "status_code": status.HTTP_201_CREATED,
                 "message": "Todo created successfully",
                 "todo_id": str(result.inserted_id),
-                "data": fetched_created,
+                "data": individual_data(fetched_created),
             }
 
         except Exception as e:  # noqa: BLE001
@@ -140,8 +140,43 @@ class TodoService:
                 )
 
             # Query MongoDB
-            todo = await todoCollection.find_one({"_id": ObjectId(_id)})
+            cursor = await todoCollection.aggregate([
+                {"$match":{"_id": ObjectId(_id)}},
+                # Lookup _creator
+                {
+                    "$lookup": {
+                        "from": 'user_data',
+                        "localField": '_creator',
+                        "foreignField": '_id',
+                        "pipeline": [
+                            {
+                                "$project": {
+                                    "password": 0
+                                }
+                            }
+                        ],
+                        "as": '_creator'
+                    },
+                },
+                {
+                    "$unwind": {
+                        "path": "$_creator",
+                        "preserveNullAndEmptyArrays": True
+                    },
+                },
+                {
+                    "$set": {
+                        "_creator": {
+                            "$ifNull": ["$_creator", None]
+                        }
+                    }
+                },
+            ])
 
+            data = await cursor.to_list(length=None)
+            todo = data[0]
+
+            print(f"data: {data}")
             # Check if document exists
             if not todo:
                 raise HTTPException(
@@ -164,9 +199,10 @@ class TodoService:
             )
 
     @staticmethod
-    async def update_todo(_id: str, updated_todo: TodoModel):
+    async def update_todo(_id: str, updated_todo: TodoModel, creator_id: str):
 
         try:
+            print(f"creator_id: {creator_id}")
             todo_data = dict(updated_todo)
 
             # Validate MongoDB ObjectId format
@@ -183,6 +219,13 @@ class TodoService:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Todo not exit",
+                )
+
+            isSame = creator_id == str(ifExit["_creator"])
+            if not isSame:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You don't have access to update"
                 )
 
             await todoCollection.update_one({"_id": ObjectId(_id)}, {"$set": todo_data})
@@ -203,7 +246,7 @@ class TodoService:
             )
 
     @staticmethod
-    async def complete_and_in_complete_todo(_id: str):
+    async def complete_and_in_complete_todo(_id: str, creator_id: str):
         try:
             # Validate MongoDB ObjectId format
             if not ObjectId.is_valid(_id):
@@ -219,6 +262,13 @@ class TodoService:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Todo not exit",
+                )
+
+            isSame = creator_id == str(ifExit["_creator"])
+            if not isSame:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You don't have access to update"
                 )
 
             updated_todo_response = await todoCollection.find_one_and_update(
@@ -242,7 +292,7 @@ class TodoService:
             )
 
     @staticmethod
-    async def disable_and_enable_todo(_id: str):
+    async def disable_and_enable_todo(_id: str, creator_id: str):
         try:
             # Validate MongoDB ObjectId format
             if not ObjectId.is_valid(_id):
@@ -259,14 +309,18 @@ class TodoService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Todo not exit",
                 )
+            isSame = creator_id == str(ifExit["_creator"])
+            if not isSame:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You don't have access to update"
+                )
 
             updated_todo_response = await todoCollection.find_one_and_update(
                 {"_id": ObjectId(_id)},
                 {"$set": {"is_deleted": not ifExit.get("is_deleted", False)}},
                 return_document=ReturnDocument.AFTER,
             )
-
-            print(f"updated_todo_response: {updated_todo_response}")
 
             return {
                 "success": True,
@@ -283,7 +337,7 @@ class TodoService:
             )
 
     @staticmethod
-    async def delete_todo(_id: str):
+    async def delete_todo(_id: str, creator_id: str):
         try:
             if not ObjectId.is_valid(_id):
                 raise HTTPException(
@@ -296,6 +350,12 @@ class TodoService:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Todo not exit",
+                )
+            isSame = creator_id == str(ifExit["_creator"])
+            if not isSame:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You don't have access to delete"
                 )
 
             await todoCollection.delete_one({"_id": ObjectId(_id)})
