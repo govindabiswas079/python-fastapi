@@ -5,10 +5,11 @@ def individual_user(user: dict):
         "email": user["email"],
         "phone": user["phone"],
         "dob": user["dob"],
-        "totalTodos": user["totalTodos"],
+        "totalTodos": user.get("totalTodos", 0),
         "createdAt": user["createdAt"],
         "updatedAt": user["updatedAt"],
         "is_verified": user.get("is_verified", False),
+        "profile_picture": user.get("profile_picture"),
     }
 
 def all_users(users):

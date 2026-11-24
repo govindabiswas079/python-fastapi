@@ -66,6 +66,7 @@ class AuthService:
                 )
 
             user_data = new_user.model_dump(mode="json")
+            user_data["profile_picture"] = None
 
             # Remove plain-text password
             password = user_data.pop("password")

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import close_database, connect_database
@@ -38,6 +39,12 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"]
+)
+
+app.mount(
+    "/media/profile-pictures",
+    StaticFiles(directory=str(settings.PROFILE_PICTURE_DIR), check_dir=False),
+    name="profile-pictures",
 )
 
 app.include_router(
