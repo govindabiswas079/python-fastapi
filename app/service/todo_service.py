@@ -1,8 +1,10 @@
+import json
+
 from bson import ObjectId
 from fastapi import HTTPException, Query, status
 from pymongo import ReturnDocument
 
-from app.core.database import todoCollection, userCollection
+from app.core.database import todoCollection
 from app.models.todo_model import TodoModel
 from app.schemas.todo_schema import all_todo, individual_data
 
@@ -66,11 +68,29 @@ class TodoService:
             )
 
     @staticmethod
-    async def get_all_todos(currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
+    async def get_all_todos(_creator_id: str, _creator_ids: str, currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
         try:
             startIndex = (currentPage - 1) * pageSize
 
+            matchQuery = {}
+
+            if _creator_ids:
+                if len(_creator_ids) == 1:
+                    try:
+                        _creator_ids = json.loads(_creator_ids[0])
+                    except json.JSONDecodeError:
+                        pass
+                matchQuery["_creator"] = {
+                    "$in": [ObjectId(creator_id) for creator_id in _creator_ids]
+                }
+
+            if _creator_id:
+                matchQuery["_creator"] = ObjectId(_creator_id)
+
             cursor = await todoCollection.aggregate([
+                {
+                    "$match": matchQuery
+                },
                 # Lookup _creator
                 {
                     "$lookup": {
@@ -145,17 +165,23 @@ class TodoService:
                     },
                 },
             ])
-
             todos = await cursor.to_list(length=None)
-            metadata = todos[0]['metadata'][0]
-            data = todos[0]['data']
+            result = todos[0] if todos else {}
+            data = result.get("data", [])
+            metadata = (result.get("metadata") or [{}])[0]
+
 
             return {
                 "status_code": status.HTTP_200_OK,
                 "message": "Todos fetched successfully",
                 "data": {
                     "todos": all_todo(data),
-                    **metadata
+                    "numberOfData": metadata.get("numberOfData", 0),
+                    "currentPage": metadata.get("currentPage", 0),
+                    "pageSize": metadata.get("pageSize", 0),
+                    "totalPages": metadata.get("totalPages", 0),
+                    "from": metadata.get("from", 0),
+                    "to": metadata.get("to", 0),
                 }
             }
 

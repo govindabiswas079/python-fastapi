@@ -21,7 +21,7 @@ async def  get_user(_id: str):
     return await user_service.get_user(ObjectId(_id))
 
 
-@router.put("/profile-picture", status_code=status.HTTP_200_OK)
+@router.patch("/profile-picture", status_code=status.HTTP_200_OK)
 async def update_profile_picture(
     profile_picture: UploadFile = File(...),
     current_user=Depends(get_current_user),

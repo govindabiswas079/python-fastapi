@@ -27,7 +27,6 @@ DUMMY_OTP = "123456"
 
 
 class AuthService:
-
     def __init__(self, collection):
         self.collection = collection
 
@@ -41,7 +40,8 @@ class AuthService:
                 user, "access", access_token_lifetime(), session_id
             ),
             "refresh_token": create_token(
-                user, "refresh",
+                user,
+                "refresh",
                 timedelta(seconds=refresh_lifetime_seconds()),
                 session_id,
             ),
@@ -52,18 +52,35 @@ class AuthService:
     # ==================== REGISTER ====================
 
     async def register(self, new_user: UserModel):
+
         try:
-            duplicate_query = {
-                "$or": [{"email": new_user.email}, {"phone": new_user.phone}]
-            }
-            existing_user = await self.collection.find_one(duplicate_query)
-            if existing_user or await ephemeral_store.has_pending(
-                new_user.email, new_user.phone
-            ):
+            existing_email = await self.collection.find_one({ "email": new_user.email })
+            existing_mobile = await self.collection.find_one({ "phone": new_user.phone })
+
+            if existing_email and existing_mobile:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Email or phone number already registered",
                 )
+
+            if existing_email:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered",
+                )
+            if existing_mobile:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Phone number already registered",
+                )
+
+            # if existing_user or await ephemeral_store.has_pending(
+            #     new_user.email, new_user.phone
+            # ):
+            #     raise HTTPException(
+            #         status_code=status.HTTP_409_CONFLICT,
+            #         detail="Email or phone number already registered",
+            #     )
 
             user_data = new_user.model_dump(mode="json")
             user_data["profile_picture"] = None
@@ -215,17 +232,25 @@ class AuthService:
         try:
             user_id = ObjectId(payload["sub"])
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token") from exc
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired refresh token"
+            ) from exc
         if session_user_id != str(user_id):
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired refresh token"
+            )
         user = await self.collection.find_one({"_id": user_id, "is_verified": True})
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired refresh token"
+            )
 
         # Rotate the session so a refresh token can be used only once.
         consumed_user_id = await ephemeral_store.consume_session(payload["jti"])
         if consumed_user_id != str(user_id):
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired refresh token"
+            )
         return {
             "status_code": status.HTTP_200_OK,
             "message": "Token refreshed successfully",

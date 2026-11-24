@@ -44,11 +44,11 @@ class EphemeralStore:
         async with self._lock:
             self._values[key] = (value, time.time() + ttl)
 
-    async def has_pending(self, email, phone):
-        email_key, phone_key = f"pending:email:{email}", f"pending:phone:{phone}"
-        if self._redis:
-            return bool(await self._redis.exists(email_key, phone_key))
-        return bool(await self._get(email_key) or await self._get(phone_key))
+    # async def has_pending(self, email, phone):
+    #     email_key, phone_key = f"pending:email:{email}", f"pending:phone:{phone}"
+    #     if self._redis:
+    #         return bool(await self._redis.exists(email_key, phone_key))
+    #     return bool(await self._get(email_key) or await self._get(phone_key))
 
     async def create_pending(self, email, phone, data, ttl):
         email_key, phone_key = f"pending:email:{email}", f"pending:phone:{phone}"
