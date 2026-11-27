@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
-from app.core.database import close_database, connect_database
+from app.core.database import close_database, connect_database, create_indexes
 from app.core.ephemeral_store import ephemeral_store
 from app.router.auth_router import router as auth_router
 from app.router.todo_router import router as todo_router
@@ -18,6 +18,7 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_database()
+    await create_indexes()
     await ephemeral_store.connect()
     print("MongoDB connected successfully")
     yield

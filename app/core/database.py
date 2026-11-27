@@ -19,3 +19,15 @@ async def connect_database():
 
 async def close_database():
     await MongoDBClient.close()
+
+async def create_indexes():
+    await todoCollection.create_index([
+        ("title", "text"),
+        ("description", "text"),
+    ])
+
+    await userCollection.create_index([
+        ("name", "text"),
+        ("email", "text"),
+        ("phone", "text"),
+    ])

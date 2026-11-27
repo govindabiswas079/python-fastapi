@@ -21,12 +21,15 @@ async def create_todo(
 
 @router.get("/", status_code=status.HTTP_200_OK)
 async def get_all_todos(
+    _search: Optional[str] = Query(default=None),
+    isCompleted: Optional[bool] = Query(default=None),
+    isDeleted: Optional[bool] = Query(default=None),
     _creator_id: Optional[str] = Query(default=None),
     _creator_ids: Optional[list[str]] = Query(default=None),
     currentPage: int = Query(default=1, ge=1),
     pageSize: int = Query(default=25, ge=1),
 ):
-    return await TodoService.get_all_todos(_creator_id, _creator_ids, currentPage, pageSize)
+    return await TodoService.get_all_todos(_search, isCompleted, isDeleted, _creator_id, _creator_ids, currentPage, pageSize)
 
 
 @router.get("/{_id}", status_code=status.HTTP_200_OK)

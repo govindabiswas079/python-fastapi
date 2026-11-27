@@ -1,4 +1,5 @@
 import json
+import re
 
 from bson import ObjectId
 from fastapi import HTTPException, Query, status
@@ -68,11 +69,16 @@ class TodoService:
             )
 
     @staticmethod
-    async def get_all_todos(_creator_id: str, _creator_ids: str, currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
+    async def get_all_todos(_search: str, isCompleted: bool, isDeleted: bool, _creator_id: str, _creator_ids: str, currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
         try:
             startIndex = (currentPage - 1) * pageSize
 
             matchQuery = {}
+
+            if isCompleted is not None:
+                matchQuery['is_completed'] = isCompleted
+            if isDeleted is not None:
+                matchQuery['is_deleted'] = isDeleted
 
             if _creator_ids:
                 if len(_creator_ids) == 1:
@@ -86,6 +92,22 @@ class TodoService:
 
             if _creator_id:
                 matchQuery["_creator"] = ObjectId(_creator_id)
+
+            # if _search:
+            #     matchQuery["$text"] = {
+            #         "$search": _search,
+            #     }
+
+            if _search:
+                search_regex = {
+                    "$regex": re.escape(_search),
+                    "$options": "i",
+                }
+
+                matchQuery["$or"] = [
+                    {"title": search_regex},
+                    {"description": search_regex},
+                ]
 
             cursor = await todoCollection.aggregate([
                 {

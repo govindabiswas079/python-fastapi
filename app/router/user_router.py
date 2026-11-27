@@ -1,8 +1,9 @@
+from typing import Optional
+
 from bson import ObjectId
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.core.auth import get_current_user
-from app.core.config import settings
 from app.service.user_service import user_service
 
 router = APIRouter(
@@ -12,8 +13,8 @@ router = APIRouter(
 )
 
 @router.get("/", status_code=status.HTTP_200_OK)
-async def get_all_users(currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
-    return await user_service.get_all_users(currentPage, pageSize)
+async def get_all_users(_search: Optional[str] = Query(default=None), currentPage: int = Query(default=1, ge=1), pageSize: int = Query(default=25, ge=1)):
+    return await user_service.get_all_users(_search, currentPage, pageSize)
 
 
 @router.get("/{_id}", status_code=status.HTTP_200_OK)
